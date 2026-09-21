@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Trust-Aware Review Summarizer",
+  "version": "1.0",
+  "description": "Analyzes product reviews across languages, down-weights fakes, and provides a trust-adjusted rating.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.amazon.com/*",
+    "http://localhost:8000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://*.amazon.com/*"],
+      "css": ["style.css"],
+      "js": ["content.js"]
+    }
+  ]
+}
