@@ -95,11 +95,12 @@ Test it:
 ```bash
 curl -X POST http://localhost:8080/api/summarize \
   -H "Content-Type: application/json" \
-  -d '{"product_id":"B0F66XDSLF","platform":"amazon"}' | python3 -m json.tool
-# {"raw_rating":4.1,"trust_adjusted_rating":4.29,"down_weighted_count":5,"total_reviews":10,
-#  "aspects":[{"build":-0.2},{"sound quality":0.6}...],"summary_text":"...","latency_seconds":30.55}
-
-# Any product works — synthetic per-product (B08J5F3G18 → 3.25, B0F66XDSLF → 4.29 different)
+  -d '{"product_id":"B0F66XDSLF","platform":"amazon","product_title":"for AirTag Holder for Kids with Invisible Pin"}' | python3 -m json.tool
+# {"raw_rating":4.0,"trust_adjusted_rating":3.7,"down_weighted_count":5,"total_reviews":10,
+#  "aspects":[{"pin":0.17},{"durability":-0.5},{"waterproof_cover":0.5}...],
+#  "summary_text":"This AirTag holder for kids offers... keeps AirTags secure on backpacks..."}
+# Headphone: B0F66XDSLF (Nothing) → battery/sound, AirTag: B0FNJS4N2H → pin/waterproof (title-aware)
+# Any product works — synthetic per-product + title category (headphone vs airtag vs generic)
 ```
 
 ### 5. Load Chrome Extension
@@ -127,13 +128,17 @@ venv/bin/python eval/eval_trust.py            # Precision/Recall/F1 on 100 mock 
 
 ## How It Works (For Your Friend to Understand)
 
-1. **You visit Amazon:** Content script `extension/content.js:14` extracts ASIN via regex `/dp/([A-Z0-9]{10})`
-2. **Extension calls API:** `fetchWithFallback()` POST `http://localhost:8080/api/summarize` with `product_id`
-3. **Backend:** `src/api/main.py:61` checks `retriever.metadata` — if new ASIN, generates 10 deterministic synthetic reviews (`_generate_synthetic_for_product`) with 30% fake burst, trains XGBoost, indexes via FAISS/BM25. Else uses cache.
+**Is it scanning Amazon live?** No — current demo uses **synthetic per-product** generation (not live Amazon scraping). Real scraping would need Amazon SP-API / DOM review scraping (`data-hook="review"`), which is not yet implemented. The extension now is **title-aware** to fix the "AirTag shows headphones" bug.
+
+1. **You visit Amazon:** Content script `extension/content.js:14` extracts ASIN via regex `/dp/([A-Z0-9]{10})` + `extension/content.js:25` `extractProductTitle()` from `#productTitle`
+2. **Extension calls API:** `fetchWithFallback()` POST `http://localhost:8080/api/summarize` with `{product_id, product_title}` (supports 8000/8001/8080 fallback)
+3. **Backend:** `src/api/main.py:103` checks `retriever.metadata` — if new ASIN, calls `_generate_synthetic_for_product(pid, title)` → `_detect_category(title)` picks `airtag|headphone|generic` pool (+ `fake` burst 30%), trains XGBoost, indexes via FAISS/BM25. Else cache. Title also passed to `orchestrator.run(pid, "", title)` → `summarization_agent.py:32` includes `Product: {title}` in LLM prompt to avoid hallucinating unrelated product.
 4. **Pipeline:** `PipelineOrchestrator.run()` → Hybrid retrieval top-10 → Trust scoring → LLM aspect extraction + summarization (`gpt-oss:20b-cloud` or `llama3.1:8b`) → JSON with `total_reviews`
 5. **UI Renders:** `content.js:159` calculates trusted/flagged, gauge `conic-gradient`, aspect bars, collapsible breakdown. Cached per `amazon:ASIN` for Ollama quota.
 
 **Why trust-adjusted differs?** Fake 5★ templated reviews (`great product highly recommend`) get `trust_score <0.5` → down-weighted in `SummarizationAgent` weighted average, so genuine 2★ critiques pull rating down (or up if fakes were negative).
+
+**Your screenshot bug explained:** `B0FNJS4N2H` AirTag page showed *“wireless headphones ... ANC ... spatial sound”* because old `_synthetic_templates` was headphone-only. Fixed `src/api/main.py:49` → `_synthetic_pool` with `headphone` vs `airtag` vs `generic` + title-aware.
 
 ## Project Structure
 ```
@@ -160,13 +165,13 @@ DEMO.md — 5-min demo script
 | `8000 occupied` | Use `8080` or `kill -f "uvicorn web.app"` |
 | `Failed to fetch` | `ollama serve` + `uvicorn` on 8080 running? Check `curl http://localhost:8080/docs` |
 | `llama3.1:70b-cloud not found` | Use `gpt-oss:20b-cloud` (free) — updated in `.env.example` |
-| Same output for all products | Update to latest `main` — old `src/api/main.py:63` hard-coded `B08J5F3G18`, now dynamic |
+| Same output for all products | Update to latest `main` — old `src/api/main.py:63` hard-coded `B08J5F3G18`, now dynamic + title-aware |
 | `emoji ModuleNotFound` | `source venv/bin/activate` before pytest |
 
 ## Known Limitations
 - Linguistic sentiment: `textblob` fallback, true ABSA via LLM
 - Graph scalability: in-memory `networkx` → production needs Neo4j
-- Synthetic data for unknown ASINs (no live Amazon scraping yet)
+- Synthetic data for unknown ASINs (no live Amazon scraping yet) — now title-aware (fixed AirTag vs headphone) but still mock; true live scrape needs Amazon review DOM/API
 
 ## DEMO.md Flow
 1. Problem (0:00) — show 5★ fakes on Amazon

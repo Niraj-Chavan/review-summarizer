@@ -25,6 +25,7 @@ app.add_middleware(
 class SummarizeRequest(BaseModel):
     product_id: str
     platform: str = "amazon"
+    product_title: str = ""
 
 # In-memory cache to protect Ollama Cloud quota
 CACHE: Dict[str, Dict[str, Any]] = {}
@@ -45,28 +46,55 @@ raw_reviews = [
     {"review_id": "r4", "reviewer_id": "u4", "product_id": "B08J5F3G18", "rating": 2, "verified_purchase": True, "timestamp": "2023-10-03T15:30:00", "text": "Not worth the money. Build quality is terrible. Battery life is decent though."}
 ]
 
-# Additional synthetic products for demo (Nothing, Sony, etc.)
-_synthetic_templates = [
-    ("Battery life is amazing, lasts 80 hours as advertised! ANC is great.", 5, True),
-    ("Sound quality is excellent, KEF-tuned audio is crystal clear.", 5, True),
-    ("Comfortable for long hours, build is premium white finish.", 4, True),
-    ("Spatial sound is immersive, fast charging works in 30 mins.", 4, True),
-    ("great product highly recommend best build ever", 5, False),
-    ("Great product. Perfect. The best thing ever made. Buy it now.", 5, False),
-    ("Battery died after two days. Also the build quality is cheap plastic.", 1, True),
-    ("Not worth the money. Build quality is terrible. Battery life is decent though.", 2, True),
-    ("The headband cracked after a month, poor durability.", 2, True),
-    ("ANC is weak compared to Sony, overpriced for the quality.", 2, True),
-]
+# Category-aware synthetic templates — fixes AirTag vs Headphone mismatch
+_synthetic_pool = {
+    "headphone": [
+        ("Battery life is amazing, lasts 80 hours as advertised! ANC is great.", 5, True),
+        ("Sound quality is excellent, KEF-tuned audio is crystal clear.", 5, True),
+        ("Comfortable for long hours, build is premium white finish.", 4, True),
+        ("Spatial sound is immersive, fast charging works in 30 mins.", 4, True),
+        ("Battery died after two days. Also the build quality is cheap plastic.", 1, True),
+        ("The headband cracked after a month, poor durability.", 2, True),
+        ("ANC is weak compared to Sony, overpriced for the quality.", 2, True),
+    ],
+    "airtag": [
+        ("Invisible pin holds perfectly on my kid's clothes, very secure.", 5, True),
+        ("Waterproof cover works great, survived washing machine!", 5, True),
+        ("Lightweight and comfortable, my toddler doesn't notice it.", 4, True),
+        ("Perfect for tracking backpack and shoes, pin is sturdy.", 4, True),
+        ("Pin is flimsy, broke after a week, not durable.", 2, True),
+        ("Too bulky for small clothes, fell off easily.", 2, True),
+        ("Not truly waterproof, got damaged in rain.", 1, True),
+    ],
+    "generic": [
+        ("Great value for money, does exactly what it promises.", 4, True),
+        ("Quality is okay for the price, shipping was fast.", 4, True),
+        ("Stopped working after a month, poor durability.", 2, True),
+        ("Overpriced for what you get, build feels cheap.", 2, True),
+    ],
+    "fake": [
+        ("great product highly recommend best build ever", 5, False),
+        ("Great product. Perfect. The best thing ever made. Buy it now.", 5, False),
+    ]
+}
 
-def _generate_synthetic_for_product(pid: str, n=10):
-    """Deterministic synthetic reviews per product_id to make demo look real and show trust delta."""
-    h = int(hashlib.md5(pid.encode()).hexdigest()[:8], 16)
+def _detect_category(title: str) -> str:
+    t = title.lower()
+    if any(k in t for k in ["airtag", "tracker", "gps", "finder", "pin", "holder"]):
+        return "airtag"
+    if any(k in t for k in ["headphone", "earphone", "earbud", "anc", "kef", "nothing"]):
+        return "headphone"
+    return "generic"
+
+def _generate_synthetic_for_product(pid: str, n=10, title: str = ""):
+    """Deterministic synthetic reviews per product_id + title category to match actual product."""
+    h = int(hashlib.md5((pid + title).encode()).hexdigest()[:8], 16)
     rng = random.Random(h)
+    cat = _detect_category(title)
+    pool = _synthetic_pool[cat] + _synthetic_pool["generic"]
     reviews = []
     for i in range(n):
-        text, rating, verified = rng.choice(_synthetic_templates)
-        # Inject variation
+        text, rating, verified = rng.choice(pool)
         reviews.append({
             "review_id": f"{pid}_r{i}",
             "reviewer_id": f"{pid}_u{i%6}",
@@ -76,9 +104,10 @@ def _generate_synthetic_for_product(pid: str, n=10):
             "timestamp": f"2023-10-{rng.randint(1,28):02d}T{rng.randint(10,22):02d}:{rng.randint(0,59):02d}:00",
             "text": text
         })
-    # Ensure at least 30% fake burst for visible trust delta
+    # Inject 30% fake burst for trust delta visibility
     for j in range(3):
-        reviews[j]["text"] = "great product highly recommend best build ever"
+        text, rating, verified = rng.choice(_synthetic_pool["fake"])
+        reviews[j]["text"] = text
         reviews[j]["rating"] = 5
         reviews[j]["verified_purchase"] = False
         reviews[j]["timestamp"] = "2023-10-01T10:0{}:00".format(j)
@@ -110,11 +139,13 @@ async def summarize(request: SummarizeRequest):
         print(f"Returning cached result for {cache_key}")
         return CACHE[cache_key]
 
-    # If product not in retriever, generate synthetic reviews on-the-fly
+    # If product not in retriever, generate synthetic reviews on-the-fly (title-aware)
+    title = getattr(request, "product_title", "") or ""
+    print(f"Request pid={pid} title='{title[:60]}'")
     existing_pids = set(m.get("product_id") for m in retriever.metadata)
     if pid not in existing_pids:
-        print(f"Product {pid} not in cache — generating synthetic reviews")
-        synth = _generate_synthetic_for_product(pid, n=10)
+        print(f"Product {pid} not in cache — generating synthetic reviews for category '{_detect_category(title)}'")
+        synth = _generate_synthetic_for_product(pid, n=10, title=title)
         try:
             df_syn = extractor.extract_features(synth)
             df_syn['graph_collusion_risk'] = 0.0
@@ -133,7 +164,7 @@ async def summarize(request: SummarizeRequest):
     # We wrap it in asyncio.wait_for to enforce the timeout
     try:
         result = await asyncio.wait_for(
-            asyncio.to_thread(orchestrator.run, pid, ""),
+            asyncio.to_thread(orchestrator.run, pid, "", title),
             timeout=timeout
         )
         

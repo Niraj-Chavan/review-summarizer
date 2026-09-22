@@ -21,6 +21,14 @@ function extractAmazonProductId() {
   return null;
 }
 
+function extractProductTitle() {
+  const el = document.querySelector('#productTitle');
+  if (el && el.innerText.trim().length > 5) return el.innerText.trim().slice(0,120);
+  const h1 = document.querySelector('h1');
+  if (h1 && h1.innerText.trim().length > 5) return h1.innerText.trim().slice(0,120);
+  return document.title.slice(0,120);
+}
+
 function createBadgeContainer() {
   const c = document.createElement('div');
   c.id = 'trust-badge-container';
@@ -308,6 +316,7 @@ function renderSuccess(container, data) {
 }
 
 async function fetchWithFallback(productId) {
+  const title = extractProductTitle();
   const endpoints = [
     'http://localhost:8000/api/summarize',
     'http://127.0.0.1:8000/api/summarize',
@@ -322,7 +331,7 @@ async function fetchWithFallback(productId) {
       const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: productId, platform: 'amazon' })
+        body: JSON.stringify({ product_id: productId, platform: 'amazon', product_title: title })
       });
       if (!resp.ok) {
         if (resp.status === 503) throw new Error("Backend or Ollama unreachable. Is 'ollama serve' running?");

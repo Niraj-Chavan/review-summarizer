@@ -6,7 +6,7 @@ class SummarizationAgent:
     def __init__(self, client: LLMClient):
         self.client = client
 
-    def generate_summary(self, reviews: List[Dict[str, Any]], aspect_scores: Dict[str, float]) -> Dict[str, Any]:
+    def generate_summary(self, reviews: List[Dict[str, Any]], aspect_scores: Dict[str, float], product_title: str = "") -> Dict[str, Any]:
         if not reviews:
             return {"summary_text": "No reviews available for summary."}
 
@@ -29,15 +29,16 @@ class SummarizationAgent:
         
         # Prepare aspects string
         aspect_info = ", ".join([f"{k}: {v:.2f}" for k, v in aspect_scores.items()])
+        title_ctx = f"Product: {product_title}\n" if product_title else ""
         
         messages = [
             {
                 "role": "system",
-                "content": "You are a product review summarization assistant. Given the aspect sentiment scores (range -1 to 1) and rating info, generate a 2-4 sentence natural-language opinion summary of the product. Return ONLY valid JSON with a single key 'summary_text'."
+                "content": "You are a product review summarization assistant. Given the product title, aspect sentiment scores (range -1 to 1) and rating info, generate a 2-4 sentence natural-language opinion summary SPECIFIC to that product. Do NOT mention unrelated products (e.g., don't mention headphones for an AirTag). Return ONLY valid JSON with a single key 'summary_text'."
             },
             {
                 "role": "user",
-                "content": f"Aspects and Sentiment Scores: {aspect_info}\nRaw Rating: {raw_avg:.2f}/5\nTrust-Adjusted Rating: {trust_adj:.2f}/5\nDown-weighted reviews: {down_weighted_count}\n\nGenerate the summary."
+                "content": f"{title_ctx}Aspects and Sentiment Scores: {aspect_info}\nRaw Rating: {raw_avg:.2f}/5\nTrust-Adjusted Rating: {trust_adj:.2f}/5\nDown-weighted reviews: {down_weighted_count}\n\nGenerate the summary."
             }
         ]
         

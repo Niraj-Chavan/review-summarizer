@@ -15,7 +15,7 @@ class PipelineOrchestrator:
         self.aspect_opinion_agent = AspectOpinionAgent(self.client)
         self.summary_agent = SummarizationAgent(self.client)
 
-    def run(self, product_id: str, query: str = "") -> Dict[str, Any]:
+    def run(self, product_id: str, query: str = "", product_title: str = "") -> Dict[str, Any]:
         start_time = time.time()
         print(f"[{self.client.mode.upper()}] Starting pipeline for product: {product_id}, query: '{query}'")
         
@@ -57,7 +57,7 @@ class PipelineOrchestrator:
         
         # 4. Summarization
         print(f"[{self.client.mode.upper()}] Generating summary...")
-        final_summary = self.summary_agent.generate_summary(reviews, aspect_scores)
+        final_summary = self.summary_agent.generate_summary(reviews, aspect_scores, product_title=product_title)
         
         elapsed = time.time() - start_time
         final_summary["latency_seconds"] = round(elapsed, 2)
