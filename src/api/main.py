@@ -9,6 +9,7 @@ from typing import Dict, Any
 from src.retrieval.hybrid_search import HybridRetriever
 from src.trust.features import FeatureExtractor
 from src.trust.classifier import TrustClassifier
+from src.trust.graph import CollusionGraph
 from src.agents.orchestrator import PipelineOrchestrator
 
 app = FastAPI(title="Trust-Aware Review Summarizer API")
@@ -30,10 +31,11 @@ class SummarizeRequest(BaseModel):
 # In-memory cache to protect Ollama Cloud quota
 CACHE: Dict[str, Dict[str, Any]] = {}
 
-# Mock Pipeline Initialization (In real app, this runs at startup)
+# Pipeline Initialization — 4-person scale (P1+P2)
 retriever = HybridRetriever(model_name="intfloat/multilingual-e5-small")
 extractor = FeatureExtractor()
 classifier = TrustClassifier()
+collusion_graph = CollusionGraph()
 
 import hashlib
 import random
@@ -114,15 +116,18 @@ def _generate_synthetic_for_product(pid: str, n=10, title: str = ""):
     return reviews
 
 try:
+    collusion_graph.build_graph(raw_reviews)
+    risk = collusion_graph.detect_collusion_clusters()
     df = extractor.extract_features(raw_reviews)
-    df['graph_collusion_risk'] = 0.0
+    df['graph_collusion_risk'] = df['reviewer_id'].map(risk).fillna(0.0)
     classifier.train(df)
     all_texts = [r["text"] for r in raw_reviews]
     retriever.add_documents(all_texts, raw_reviews)
+    print(f"[Init] Graph collusion risk {risk}, indexed {len(raw_reviews)}")
 except Exception as e:
     print(f"Warning: Mock data failed to load: {e}")
 
-orchestrator = PipelineOrchestrator(retriever, extractor, classifier)
+orchestrator = PipelineOrchestrator(retriever, extractor, classifier, collusion_graph=collusion_graph)
 
 def get_timeout() -> int:
     """Returns timeout in seconds based on OLLAMA_MODE."""
@@ -147,11 +152,15 @@ async def summarize(request: SummarizeRequest):
         print(f"Product {pid} not in cache — generating synthetic reviews for category '{_detect_category(title)}'")
         synth = _generate_synthetic_for_product(pid, n=10, title=title)
         try:
+            # Build bipartite graph for new product
+            tmp_graph = CollusionGraph()
+            tmp_graph.build_graph(synth)
+            synth_risk = tmp_graph.detect_collusion_clusters()
             df_syn = extractor.extract_features(synth)
-            df_syn['graph_collusion_risk'] = 0.0
-            # Re-train on combined data to keep classifier calibrated
+            df_syn['graph_collusion_risk'] = df_syn['reviewer_id'].map(synth_risk).fillna(0.0)
             classifier.train(df_syn)
             retriever.add_documents([r["text"] for r in synth], synth)
+            print(f"[Synthetic] Graph risk {synth_risk} for {pid}")
         except Exception as e:
             print(f"Synthetic generation failed for {pid}: {e}")
             # Fallback: add without trust training

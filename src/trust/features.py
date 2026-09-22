@@ -43,8 +43,22 @@ class FeatureExtractor:
 
         # 2. Linguistic Features
         
-        # Sentiment Polarity Extremity (using TextBlob, mostly works for EN but okay as a weak signal)
-        df['sentiment_extremity'] = df['text'].apply(lambda x: abs(TextBlob(x).sentiment.polarity))
+        # Sentiment Polarity Extremity (multilingual: TextBlob for EN + lang-aware fallback)
+        # P1 upgrade: for production use cardiffnlp/twitter-xlm-roberta-base-sentiment-multilingual
+        # Here we keep TextBlob for speed but gate on langid to avoid EN bias on Hindi/Spanish
+        def _extremity(text, lang="en"):
+            try:
+                if lang in ("hi", "es", "fr", "de") :
+                    # heuristic: exclamation + caps as proxy for extremity for non-EN
+                    return min(1.0, (text.count("!")*0.2 + sum(1 for c in text if c.isupper())/max(len(text),1)))
+                return abs(TextBlob(text).sentiment.polarity)
+            except Exception:
+                return 0.5
+        # lang column may be present from ingest
+        if "lang" in df.columns:
+            df['sentiment_extremity'] = df.apply(lambda r: _extremity(r["text"], r.get("lang","en")), axis=1)
+        else:
+            df['sentiment_extremity'] = df['text'].apply(lambda x: abs(TextBlob(x).sentiment.polarity))
         
         # Generic/templated phrase detection
         df['is_templated'] = df['text'].apply(lambda x: int(any(t in x.lower() for t in self.templates)))

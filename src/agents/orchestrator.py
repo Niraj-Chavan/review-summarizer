@@ -6,10 +6,11 @@ from .summarization_agent import SummarizationAgent
 import time
 
 class PipelineOrchestrator:
-    def __init__(self, retriever, feature_extractor, trust_classifier, llm_client: LLMClient = None):
+    def __init__(self, retriever, feature_extractor, trust_classifier, llm_client: LLMClient = None, collusion_graph=None):
         self.retriever = retriever
         self.feature_extractor = feature_extractor
         self.trust_classifier = trust_classifier
+        self.collusion_graph = collusion_graph
         
         self.client = llm_client or LLMClient()
         self.aspect_opinion_agent = AspectOpinionAgent(self.client)
@@ -38,16 +39,28 @@ class PipelineOrchestrator:
             rev["text"] = doc["content"]
             reviews.append(rev)
 
-        # 2. Trust Scoring
+        # 2. Trust Scoring (P1: Graph + XGBoost)
         try:
+            # If collusion_graph injected, compute Louvain risk for current batch
+            if self.collusion_graph is not None:
+                try:
+                    self.collusion_graph.graph.clear()
+                    self.collusion_graph.build_graph(reviews)
+                    risk_map = self.collusion_graph.detect_collusion_clusters()
+                except Exception:
+                    risk_map = {}
+            else:
+                risk_map = {}
             df = self.feature_extractor.extract_features(reviews)
             if 'graph_collusion_risk' not in df.columns:
-                df['graph_collusion_risk'] = 0.0
-                
+                df['graph_collusion_risk'] = df['reviewer_id'].map(risk_map).fillna(0.0)
+            else:
+                df['graph_collusion_risk'] = df['graph_collusion_risk'].fillna(df['reviewer_id'].map(risk_map).fillna(0.0))
             trust_scores = self.trust_classifier.predict_trust_score(df)
             for i, rev in enumerate(reviews):
                 rev["trust_score"] = float(trust_scores[i])
         except Exception as e:
+            print(f"[Orchestrator] Trust scoring fallback: {e}")
             for rev in reviews:
                 rev["trust_score"] = 1.0
                 

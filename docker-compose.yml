@@ -1,0 +1,47 @@
+version: "3.8"
+services:
+  ollama:
+    image: ollama/ollama:0.24.0
+    container_name: review-ollama
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+    restart: unless-stopped
+  api:
+    build: .
+    container_name: review-api
+    ports: ["8080:8080"]
+    environment:
+      - OLLAMA_MODE=cloud
+      - OLLAMA_MODEL_CLOUD=gpt-oss:20b-cloud
+      - OLLAMA_HOST=http://ollama:11434
+      - REDIS_URL=redis://redis:6379
+    volumes: ["./data:/app/data"]
+    depends_on: [ollama, redis, postgres]
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8080
+  dashboard:
+    build: .
+    container_name: review-dashboard
+    ports: ["8501:8501"]
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    depends_on: [api]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: reviews
+      POSTGRES_USER: review
+      POSTGRES_PASSWORD: review
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+  # For P2: Qdrant vector DB (alternative to FAISS)
+  qdrant:
+    image: qdrant/qdrant
+    ports: ["6333:6333"]
+    volumes: ["qdrant:/qdrant/storage"]
+
+volumes:
+  ollama:
+  pgdata:
+  qdrant:

@@ -21,6 +21,9 @@ class HybridRetriever:
         
         # Create directory if it doesn't exist
         os.makedirs(self.index_path, exist_ok=True)
+        self._faiss_path = os.path.join(self.index_path, "faiss.index")
+        self._meta_path = os.path.join(self.index_path, "meta.pkl")
+        self._try_load()
 
     def _normalize_embeddings(self, embeddings: np.ndarray) -> np.ndarray:
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -52,10 +55,10 @@ class HybridRetriever:
         self.original_texts.extend(texts)
         
         # Sparse indexing (BM25)
-        # Tokenize by simple whitespace/lowercase for BM25
         new_tokens = [t.lower().split() for t in texts]
         self.corpus_tokens.extend(new_tokens)
         self.bm25 = BM25Okapi(self.corpus_tokens)
+        self.save()
 
     def _rrf(self, dense_results: List[Tuple[int, float]], sparse_results: List[Tuple[int, float]], k: int = 60) -> List[int]:
         """
@@ -130,3 +133,27 @@ class HybridRetriever:
             })
             
         return results
+
+    def save(self):
+        """Persist FAISS + metadata for 4-person scale (10K+ docs)."""
+        try:
+            faiss.write_index(self.faiss_index, self._faiss_path)
+            with open(self._meta_path, "wb") as f:
+                pickle.dump({"metadata": self.metadata, "texts": self.original_texts, "tokens": self.corpus_tokens}, f)
+        except Exception as e:
+            print(f"[HybridRetriever] save failed: {e}")
+
+    def _try_load(self):
+        if os.path.exists(self._faiss_path) and os.path.exists(self._meta_path):
+            try:
+                self.faiss_index = faiss.read_index(self._faiss_path)
+                with open(self._meta_path, "rb") as f:
+                    data = pickle.load(f)
+                    self.metadata = data.get("metadata", [])
+                    self.original_texts = data.get("texts", [])
+                    self.corpus_tokens = data.get("tokens", [])
+                    if self.corpus_tokens:
+                        self.bm25 = BM25Okapi(self.corpus_tokens)
+                print(f"[HybridRetriever] loaded {self.faiss_index.ntotal} docs from {self.index_path}")
+            except Exception as e:
+                print(f"[HybridRetriever] load failed: {e}")
