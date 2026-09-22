@@ -1,21 +1,30 @@
 {
   "manifest_version": 3,
   "name": "Trust-Aware Review Summarizer",
-  "version": "1.0",
-  "description": "Analyzes product reviews across languages, down-weights fakes, and provides a trust-adjusted rating.",
-  "permissions": [
-    "activeTab",
-    "scripting"
-  ],
+  "version": "1.1",
+  "description": "Analyzes product reviews across languages, down-weights fakes, and provides a trust-adjusted rating with explainable AI.",
+  "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "*://*.amazon.com/*",
-    "http://localhost:8000/*"
+    "*://*.amazon.in/*",
+    "*://*.amazon.co.uk/*",
+    "*://*.amazon.de/*",
+    "http://localhost:8000/*",
+    "http://localhost:8001/*",
+    "http://localhost:8080/*",
+    "http://127.0.0.1:8000/*",
+    "http://127.0.0.1:8001/*",
+    "http://127.0.0.1:8080/*"
   ],
   "content_scripts": [
     {
-      "matches": ["*://*.amazon.com/*"],
+      "matches": ["*://*.amazon.com/*", "*://*.amazon.in/*", "*://*.amazon.co.uk/*", "*://*.amazon.de/*"],
       "css": ["style.css"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
-  ]
+  ],
+  "action": {
+    "default_title": "Trust-Aware Summary"
+  }
 }

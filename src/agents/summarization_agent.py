@@ -25,6 +25,7 @@ class SummarizationAgent:
                 trust_adj = raw_avg
                 
         down_weighted_count = sum(1 for r in reviews if r.get('trust_score', 1.0) < 0.5)
+        total_reviews = len(reviews)
         
         # Prepare aspects string
         aspect_info = ", ".join([f"{k}: {v:.2f}" for k, v in aspect_scores.items()])
@@ -48,5 +49,6 @@ class SummarizationAgent:
             "trust_adjusted_rating": round(trust_adj, 2),
             "aspects": [{"name": k, "sentiment_score": round(v, 2)} for k, v in aspect_scores.items()],
             "summary_text": summary_text,
-            "down_weighted_count": down_weighted_count
+            "down_weighted_count": down_weighted_count,
+            "total_reviews": total_reviews
         }

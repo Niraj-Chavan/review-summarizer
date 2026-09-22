@@ -15,9 +15,22 @@ class LLMClient:
         self.local_model = os.getenv("OLLAMA_MODEL_LOCAL", "llama3.1:8b")
         self.cloud_model = os.getenv("OLLAMA_MODEL_CLOUD", "llama3.1:70b-cloud")
         
-        self.model = self.local_model if self.mode == "cloud" else self.local_model
+        # 4 modes: local, cloud, auto, hybrid (auto falls back to local if cloud unauthenticated)
         if self.mode == "cloud":
             self.model = self.cloud_model
+        elif self.mode in ("auto", "hybrid"):
+            # hybrid/auto: prefer cloud if signed in, else local
+            try:
+                import pathlib
+                cfg = pathlib.Path.home() / ".ollama" / "config.json"
+                has_cloud = cfg.exists() and "ollama.com" in cfg.read_text()
+            except Exception:
+                has_cloud = False
+            self.model = self.cloud_model if has_cloud else self.local_model
+            self.mode = "cloud" if has_cloud else "local"
+        else:
+            self.model = self.local_model
+            self.mode = "local"
             
         # The ollama python client uses the local daemon, which handles cloud proxying.
         self.client = ollama.Client(host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
