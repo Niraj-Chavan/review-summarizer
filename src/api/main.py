@@ -11,6 +11,7 @@ from src.trust.features import FeatureExtractor
 from src.trust.classifier import TrustClassifier
 from src.trust.graph import CollusionGraph
 from src.agents.orchestrator import PipelineOrchestrator
+from src.preprocessing.amazon_scraper import scrape_amazon_reviews
 
 app = FastAPI(title="Trust-Aware Review Summarizer API")
 
@@ -144,13 +145,25 @@ async def summarize(request: SummarizeRequest):
         print(f"Returning cached result for {cache_key}")
         return CACHE[cache_key]
 
-    # If product not in retriever, generate synthetic reviews on-the-fly (title-aware)
+    # If product not in retriever, try LIVE scrape first, then synthetic (title-aware)
     title = getattr(request, "product_title", "") or ""
     print(f"Request pid={pid} title='{title[:60]}'")
     existing_pids = set(m.get("product_id") for m in retriever.metadata)
     if pid not in existing_pids:
-        print(f"Product {pid} not in cache — generating synthetic reviews for category '{_detect_category(title)}'")
-        synth = _generate_synthetic_for_product(pid, n=10, title=title)
+        # 1. Try live Amazon scrape (real reviews)
+        live = []
+        try:
+            live = scrape_amazon_reviews(pid, max_reviews=10, domain="amazon.in")
+            if not live:
+                live = scrape_amazon_reviews(pid, max_reviews=10, domain="amazon.com")
+        except Exception as e:
+            print(f"Live scrape error for {pid}: {e}")
+        if live and len(live) >= 3:
+            print(f"Using LIVE {len(live)} reviews for {pid}")
+            synth = live
+        else:
+            print(f"Product {pid} live failed — generating synthetic for category '{_detect_category(title)}'")
+            synth = _generate_synthetic_for_product(pid, n=10, title=title)
         try:
             # Build bipartite graph for new product
             tmp_graph = CollusionGraph()
