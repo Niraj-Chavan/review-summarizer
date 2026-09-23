@@ -287,16 +287,34 @@
   background: #eef2ff; border: 1px solid #c7d2fe;
   padding: 2px 7px; border-radius: var(--radius-pill);
 }
-.aspect-list { display: flex; flex-direction: column; gap: 9px; }
-.aspect-item {
+.aspect-list { display: flex; flex-direction: column; gap: 10px; }
+.aspect-item, .aspect-item-detailed {
   background: white;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 11px 12px;
   display: flex; flex-direction: column; gap: 8px;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.aspect-item:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(15,23,42,0.07); }
+.aspect-item:hover, .aspect-item-detailed:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(15,23,42,0.07); }
+.aspect-count-badge {
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  padding: 2px 6px; border-radius: 999px;
+}
+.aspect-explain {
+  display: flex; gap: 7px; align-items: flex-start;
+  font-size: 12.5px; line-height: 1.45; color: #334155;
+  background: #f8fafc; border: 1px solid #f1f5f9;
+  padding: 8px 10px; border-radius: 9px;
+}
+.explain-icon { font-size: 12px; flex-shrink: 0; margin-top: 1px; }
+.explain-text { flex: 1; }
+.aspect-evidence {
+  font-size: 11.5px; font-style: italic; color: var(--text-soft);
+  border-left: 3px solid #cbd5e1; padding: 4px 8px; margin-left: 2px;
+  background: #f8fafc; border-radius: 0 8px 8px 0;
+}
 .aspect-row {
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
 }

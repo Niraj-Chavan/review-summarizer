@@ -234,18 +234,26 @@ function renderSuccess(container, data) {
         <div class="aspect-list">
           ${aspects.map(a => {
             const m = getScoreMeta(a.sentiment_score);
-            // Map -1..1 to 0..100% width, center at 50%
             const pct = Math.round(((a.sentiment_score + 1) / 2) * 100);
             const barWidth = Math.max(8, Math.min(100, pct));
+            const explanation = esc(a.explanation || (m.label==='Positive' ? `Good ${a.name} — praised by users` : m.label==='Negative' ? `Problem with ${a.name} — users complained` : `Mixed views on ${a.name}`));
+            const evidence = a.evidence ? `“${esc(a.evidence)}”` : '';
+            const count = a.review_count ? `${a.review_count} review${a.review_count>1?'s':''}` : '';
+            const problemIcon = m.cls==='negative' ? '⚠️' : m.cls==='positive' ? '✓' : '•';
             return `
-              <div class="aspect-item">
+              <div class="aspect-item-detailed">
                 <div class="aspect-row">
-                  <span class="aspect-name"><span class="aspect-dot" style="background:${m.dot}"></span>${esc(a.name)}</span>
+                  <span class="aspect-name"><span class="aspect-dot" style="background:${m.dot}"></span>${esc(a.name)} <span class="aspect-count-badge">${count}</span></span>
                   <span class="aspect-score aspect-score-${m.cls}">${m.label} ${(a.sentiment_score > 0 ? '+' : '')}${a.sentiment_score.toFixed(1)}</span>
                 </div>
                 <div class="aspect-bar-track">
                   <div class="aspect-bar-fill ${m.cls}" style="width:${barWidth}%"></div>
                 </div>
+                <div class="aspect-explain">
+                  <span class="explain-icon">${problemIcon}</span>
+                  <span class="explain-text">${explanation}</span>
+                </div>
+                ${evidence ? `<div class="aspect-evidence">${evidence}</div>` : ''}
               </div>
             `;
           }).join('')}

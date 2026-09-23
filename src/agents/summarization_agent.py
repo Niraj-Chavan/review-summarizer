@@ -6,7 +6,7 @@ class SummarizationAgent:
     def __init__(self, client: LLMClient):
         self.client = client
 
-    def generate_summary(self, reviews: List[Dict[str, Any]], aspect_scores: Dict[str, float], product_title: str = "") -> Dict[str, Any]:
+    def generate_summary(self, reviews: List[Dict[str, Any]], aspect_scores: Dict[str, Any], product_title: str = "") -> Dict[str, Any]:
         if not reviews:
             return {"summary_text": "No reviews available for summary."}
 
@@ -27,8 +27,11 @@ class SummarizationAgent:
         down_weighted_count = sum(1 for r in reviews if r.get('trust_score', 1.0) < 0.5)
         total_reviews = len(reviews)
         
-        # Prepare aspects string
-        aspect_info = ", ".join([f"{k}: {v:.2f}" for k, v in aspect_scores.items()])
+        # Prepare aspects string — handle both old float and new detailed dict
+        def _score_of(v):
+            if isinstance(v, dict): return float(v.get("score", v.get("sentiment_score", 0)))
+            return float(v)
+        aspect_info = ", ".join([f"{k}: {_score_of(v):.2f}" for k, v in aspect_scores.items()])
         title_ctx = f"Product: {product_title}\n" if product_title else ""
         
         messages = [
@@ -45,10 +48,29 @@ class SummarizationAgent:
         response = self.client.chat_structured(messages)
         summary_text = response.get('summary_text', "Summary generation failed.")
         
+        # Return detailed aspects with explanation
+        aspects_out = []
+        for k, v in aspect_scores.items():
+            if isinstance(v, dict):
+                aspects_out.append({
+                    "name": k,
+                    "sentiment_score": round(float(v.get("score", v.get("sentiment_score", 0))), 2),
+                    "explanation": v.get("explanation", "")[:180],
+                    "evidence": v.get("evidence", "")[:120],
+                    "review_count": int(v.get("review_count", 1))
+                })
+            else:
+                aspects_out.append({
+                    "name": k,
+                    "sentiment_score": round(float(v), 2),
+                    "explanation": f"{k} sentiment is {'positive' if float(v)>0.2 else 'negative' if float(v)<-0.2 else 'neutral'}.",
+                    "evidence": "",
+                    "review_count": 1
+                })
         return {
             "raw_rating": round(raw_avg, 2),
             "trust_adjusted_rating": round(trust_adj, 2),
-            "aspects": [{"name": k, "sentiment_score": round(v, 2)} for k, v in aspect_scores.items()],
+            "aspects": aspects_out,
             "summary_text": summary_text,
             "down_weighted_count": down_weighted_count,
             "total_reviews": total_reviews
