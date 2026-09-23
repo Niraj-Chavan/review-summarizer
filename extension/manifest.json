@@ -1,14 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Trust-Aware Review Summarizer",
-  "version": "1.1",
-  "description": "Analyzes product reviews across languages, down-weights fakes, and provides a trust-adjusted rating with explainable AI.",
+  "name": "Trust-Aware Review Summarizer — All Sites",
+  "version": "1.2",
+  "description": "Works on ALL sites (Amazon, Flipkart, eBay, Walmart, any product page) — down-weights fakes and trust-rates reviews.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
-    "*://*.amazon.com/*",
-    "*://*.amazon.in/*",
-    "*://*.amazon.co.uk/*",
-    "*://*.amazon.de/*",
+    "<all_urls>",
     "http://localhost:8000/*",
     "http://localhost:8001/*",
     "http://localhost:8080/*",
@@ -18,7 +15,7 @@
   ],
   "content_scripts": [
     {
-      "matches": ["*://*.amazon.com/*", "*://*.amazon.in/*", "*://*.amazon.co.uk/*", "*://*.amazon.de/*"],
+      "matches": ["<all_urls>"],
       "css": ["style.css"],
       "js": ["content.js"],
       "run_at": "document_idle"

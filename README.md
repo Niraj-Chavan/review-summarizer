@@ -30,7 +30,7 @@ graph TD
 - `src/trust/features.py` + `classifier.py` + `graph.py` — `FeatureExtractor`, `TrustClassifier` (XGBoost), `CollusionGraph`
 - `src/agents/` — `LLMClient` (4 modes), `AspectOpinionAgent`, `SummarizationAgent`, `PipelineOrchestrator`
 - `src/api/main.py` — FastAPI with caching, timeout, synthetic per-product generation, CORS for extension
-- `extension/` — Premium Chrome overlay (manifest v3, content script, glassmorphism UI)
+ - `extension/` — Premium Chrome overlay (manifest v3, `<all_urls>` for ALL sites: Amazon/Flipkart/eBay/Walmart/generic, content script, glassmorphism UI)
 - `eval/` — Benchmarks (Plain RAG vs BM25 vs Trust-Aware) + ROUGE/BERTScore
 
 ---
@@ -103,12 +103,12 @@ curl -X POST http://localhost:8080/api/summarize \
 # Any product works — synthetic per-product + title category (headphone vs airtag vs generic)
 ```
 
-### 5. Load Chrome Extension
+### 5. Load Chrome Extension (Now for ALL Sites — v1.2)
 1. `chrome://extensions` → enable **Developer mode** (top-right)
-2. **Load unpacked** → select `review-summarizer/extension` (contains `manifest.json`, `content.js`, `style.css`)
+2. **Load unpacked** → select `review-summarizer/extension` (contains `manifest.json <all_urls>`, `content.js`, `style.css`)
 3. Pin the **Trust-Aware** icon
-4. Open Amazon: `https://www.amazon.com/dp/B0F66XDSLF` (Nothing Headphone) or any `/dp/B0XXXXXXXX`
-5. Hard-refresh `Ctrl+Shift+R` → bottom-right **Trust-Aware Summary** slides in:
+4. Open **any** site: Amazon `amazon.com/dp/B0F66XDSLF`, Flipkart `flipkart.com/p/itm...`, eBay `ebay.com/itm/...`, Walmart, Myntra or any product page with title
+5. Hard-refresh `Ctrl+Shift+R` → bottom-right **Trust-Aware Summary** slides in (generic `GEN_` ID for non-Amazon, auto-detects `flipkart/ebay/walmart/generic` platform):
    - **Trust-Adjusted ★4.29 vs Raw 4.1** with delta chip, 5-star row
    - **Trust Gauge** (50-100% trusted), **5 flagged / 10 total**
    - **AI Summary** 2-4 sentences, **Aspect Breakdown** (battery, build quality with -0.5 to +0.6 bars)
@@ -130,7 +130,7 @@ venv/bin/python eval/eval_trust.py            # Precision/Recall/F1 on 100 mock 
 
 **Is it scanning Amazon live?** No — current demo uses **synthetic per-product** generation (not live Amazon scraping). Real scraping would need Amazon SP-API / DOM review scraping (`data-hook="review"`), which is not yet implemented. The extension now is **title-aware** to fix the "AirTag shows headphones" bug.
 
-1. **You visit Amazon:** Content script `extension/content.js:14` extracts ASIN via regex `/dp/([A-Z0-9]{10})` + `extension/content.js:25` `extractProductTitle()` from `#productTitle`
+1. **You visit ANY site:** Content script `extension/content.js:14` tries Amazon ASIN `/dp/([A-Z0-9]{10})`, else `extension/content.js:24` `extractGenericProductId()` hashes Flipkart/eBay/Walmart ID or title+hostname → `GEN_`/`FK_`/`EBAY_` + `extension/content.js:43` `detectPlatform()` (amazon/flipkart/ebay/walmart/generic) + `extractProductTitle()` from `#productTitle`/`h1`
 2. **Extension calls API:** `fetchWithFallback()` POST `http://localhost:8080/api/summarize` with `{product_id, product_title}` (supports 8000/8001/8080 fallback)
 3. **Backend:** `src/api/main.py:103` checks `retriever.metadata` — if new ASIN, calls `_generate_synthetic_for_product(pid, title)` → `_detect_category(title)` picks `airtag|headphone|generic` pool (+ `fake` burst 30%), trains XGBoost, indexes via FAISS/BM25. Else cache. Title also passed to `orchestrator.run(pid, "", title)` → `summarization_agent.py:32` includes `Product: {title}` in LLM prompt to avoid hallucinating unrelated product.
 4. **Pipeline:** `PipelineOrchestrator.run()` → Hybrid retrieval top-10 → Trust scoring → LLM aspect extraction + summarization (`gpt-oss:20b-cloud` or `llama3.1:8b`) → JSON with `total_reviews`

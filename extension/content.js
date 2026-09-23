@@ -21,6 +21,35 @@ function extractAmazonProductId() {
   return null;
 }
 
+function extractGenericProductId() {
+  // For non-Amazon sites: Flipkart, eBay, Walmart, Myntra, etc. — hash URL + title
+  const title = extractProductTitle();
+  const url = window.location.href;
+  // Flipkart: /p/itmXXXX, eBay: /itm/123, Walmart: /ip/...
+  const mFlip = url.match(/\/p\/itm([a-z0-9]+)/i);
+  if (mFlip) return `FK_${mFlip[1].slice(0,10).toUpperCase()}`;
+  const mEbay = url.match(/\/itm\/(\d+)/);
+  if (mEbay) return `EBAY_${mEbay[1].slice(0,10)}`;
+  const mWalmart = url.match(/\/ip\/[^\/]+\/(\d+)/);
+  if (mWalmart) return `WMT_${mWalmart[1].slice(0,10)}`;
+  // Generic fallback: hash title+hostname (stable per product)
+  let hash = 0;
+  const str = (window.location.hostname + title).slice(0,80);
+  for (let i=0;i<str.length;i++) { hash = ((hash<<5)-hash)+str.charCodeAt(i); hash |=0; }
+  const id = Math.abs(hash).toString(36).toUpperCase().slice(0,10).padEnd(10,'X');
+  return `GEN_${id}`;
+}
+
+function detectPlatform() {
+  const h = window.location.hostname;
+  if (h.includes("amazon")) return "amazon";
+  if (h.includes("flipkart")) return "flipkart";
+  if (h.includes("ebay")) return "ebay";
+  if (h.includes("walmart")) return "walmart";
+  if (h.includes("myntra") || h.includes("ajio") || h.includes("nykaa")) return "fashion";
+  return "generic";
+}
+
 function extractProductTitle() {
   const el = document.querySelector('#productTitle');
   if (el && el.innerText.trim().length > 5) return el.innerText.trim().slice(0,120);
@@ -317,6 +346,7 @@ function renderSuccess(container, data) {
 
 async function fetchWithFallback(productId) {
   const title = extractProductTitle();
+  const platform = detectPlatform();
   const endpoints = [
     'http://localhost:8000/api/summarize',
     'http://127.0.0.1:8000/api/summarize',
@@ -331,7 +361,7 @@ async function fetchWithFallback(productId) {
       const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: productId, platform: 'amazon', product_title: title })
+        body: JSON.stringify({ product_id: productId, platform: platform, product_title: title })
       });
       if (!resp.ok) {
         if (resp.status === 503) throw new Error("Backend or Ollama unreachable. Is 'ollama serve' running?");
@@ -354,8 +384,16 @@ async function fetchWithFallback(productId) {
 }
 
 async function init(isRetry = false) {
-  const productId = extractAmazonProductId();
-  if (!productId) return;
+  // Try Amazon ASIN first, then generic fallback for ALL sites
+  let productId = extractAmazonProductId();
+  const isAmazon = !!productId;
+  if (!productId) {
+    productId = extractGenericProductId();
+    // On generic non-product pages (e.g., google.com), skip if title too short
+    if (extractProductTitle().length < 8) return;
+  }
+  // Show platform badge in header if needed (debug)
+  // console.log(`Trust-Aware: ${isAmazon ? 'Amazon' : detectPlatform()} pid=${productId}`);
   const container = document.getElementById('trust-badge-container') || createBadgeContainer();
   if (!isRetry) lastData = null;
   renderLoading(container);
