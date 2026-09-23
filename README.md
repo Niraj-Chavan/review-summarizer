@@ -11,7 +11,7 @@ An advanced multi-agent system that summarizes e-commerce product reviews across
 ```mermaid
 graph TD
     A[Raw Multilingual Reviews] --> B(Preprocessing & Chunking)
-    B --> C(Hybrid Retrieval: BM25 + FAISS]
+    B --> C[Hybrid Retrieval: BM25 + FAISS]
     A --> D(Trust & Fraud Agent)
     D --> |Behavioral/Linguistic Features| E[XGBoost Classifier]
     D --> |Bipartite Graph| F[Louvain Community Detection]
